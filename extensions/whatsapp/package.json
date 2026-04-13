@@ -59,6 +59,9 @@
     "build": {
       "openclawVersion": "2026.4.20"
     },
+    "bundle": {
+      "stageRuntimeDependencies": true
+    },
     "release": {
       "publishToClawHub": true,
       "publishToNpm": true

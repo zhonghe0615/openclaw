@@ -106,6 +106,24 @@ describe("resolveGatewayProgramArguments", () => {
     ]);
   });
 
+  it("prefers index.js over legacy entry.js when both exist in the same dist directory", async () => {
+    const entryPath = path.resolve("/opt/openclaw/dist/entry.js");
+    const indexPath = path.resolve("/opt/openclaw/dist/index.js");
+    process.argv = ["node", entryPath];
+    fsMocks.realpath.mockResolvedValue(entryPath);
+    fsMocks.access.mockResolvedValue(undefined);
+
+    const result = await resolveGatewayProgramArguments({ port: 18789 });
+
+    expect(result.programArguments).toEqual([
+      process.execPath,
+      indexPath,
+      "gateway",
+      "--port",
+      "18789",
+    ]);
+  });
+
   it("uses AC-only caffeinate assertions when keepAwake is limited to plugged-in power", () => {
     const result = applyGatewayKeepAwakeWrapper({
       platform: "darwin",
