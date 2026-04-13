@@ -81,7 +81,6 @@ function loadBashToolsModule(): Promise<BashToolsModule> {
   bashToolsModulePromise ??= import("./bash-tools.js");
   return bashToolsModulePromise;
 }
-
 function createLazyExecTool(defaults?: ExecToolDefaults): AnyAgentTool {
   let loadedTool: AnyAgentTool | undefined;
   const loadTool = async () => {

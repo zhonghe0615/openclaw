@@ -31,7 +31,6 @@ export {
 } from "./attempt-execution.helpers.js";
 
 const log = createSubsystemLogger("agents/agent-command");
-
 const ACP_TRANSCRIPT_USAGE = {
   input: 0,
   output: 0,
