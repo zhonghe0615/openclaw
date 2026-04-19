@@ -102,6 +102,29 @@ describe("config schema regressions", () => {
     expect(res.ok).toBe(true);
   });
 
+  it("accepts channels.imessage.remoteHost", () => {
+    const res = validateConfigObject({
+      channels: {
+        imessage: {
+          remoteHost: "bot@gateway-host",
+        },
+      },
+    });
+
+    expect(res.ok).toBe(true);
+  });
+
+  it("accepts channels.whatsapp.enabled", () => {
+    const res = validateConfigObject({
+      channels: {
+        whatsapp: {
+          enabled: true,
+        },
+      },
+    });
+
+    expect(res.ok).toBe(true);
+  });
   it("accepts gateway.keepAwake caffeinate config", () => {
     const res = validateConfigObject({
       gateway: {
@@ -116,6 +139,22 @@ describe("config schema regressions", () => {
     expect(res.ok).toBe(true);
   });
 
+  it("accepts channels.bluebubbles enrichGroupParticipantsFromContacts at channel and account scope", () => {
+    const res = validateConfigObject({
+      channels: {
+        bluebubbles: {
+          enrichGroupParticipantsFromContacts: true,
+          accounts: {
+            work: {
+              enrichGroupParticipantsFromContacts: false,
+            },
+          },
+        },
+      },
+    });
+
+    expect(res.ok).toBe(true);
+  });
   it("rejects oversized agents.defaults.startupContext overrides", () => {
     const res = validateConfigObject({
       agents: {
