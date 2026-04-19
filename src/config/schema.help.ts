@@ -95,6 +95,14 @@ export const FIELD_HELP: Record<string, string> = {
     "Explicit gateway-level tool allowlist when you want a narrow set of tools available at runtime. Use this for locked-down environments where tool scope must be tightly controlled.",
   "gateway.tools.deny":
     "Explicit gateway-level tool denylist to block risky tools even if lower-level policies allow them. Use deny rules for emergency response and defense-in-depth hardening.",
+  "gateway.keepAwake":
+    "macOS gateway service power assertion settings. Use this when the host must stay responsive while the display is off, and account for battery drain when enabled off power.",
+  "gateway.keepAwake.enabled":
+    "Enables keep-awake wrapping for the macOS LaunchAgent when true. Disable when you prefer normal system sleep behavior.",
+  "gateway.keepAwake.mode":
+    'Keep-awake implementation. "caffeinate" wraps the LaunchAgent command with /usr/bin/caffeinate on macOS.',
+  "gateway.keepAwake.onlyWhenPluggedIn":
+    "Limits the keep-awake assertion to AC power when true. Set false only when battery-powered responsiveness is more important than battery life.",
   "gateway.channelHealthCheckMinutes":
     "Interval in minutes for automatic channel health probing and status updates. Use lower intervals for faster detection, or higher intervals to reduce periodic probe noise.",
   "gateway.channelStaleEventThresholdMinutes":

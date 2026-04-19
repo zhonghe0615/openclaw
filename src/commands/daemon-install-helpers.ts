@@ -277,6 +277,7 @@ export async function buildGatewayInstallPlan(params: {
     dev: devMode,
     runtime: params.runtime,
     nodePath,
+    keepAwake: params.config?.gateway?.keepAwake,
   });
   await emitDaemonInstallRuntimeWarning({
     env: params.env,

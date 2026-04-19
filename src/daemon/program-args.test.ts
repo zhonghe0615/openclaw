@@ -32,7 +32,7 @@ vi.mock("node:child_process", async () => {
   };
 });
 
-import { resolveGatewayProgramArguments } from "./program-args.js";
+import { applyGatewayKeepAwakeWrapper, resolveGatewayProgramArguments } from "./program-args.js";
 
 const originalArgv = [...process.argv];
 
@@ -84,6 +84,56 @@ describe("resolveGatewayProgramArguments", () => {
     ]);
   });
 
+  it("wraps macOS gateway commands with caffeinate for battery keep-awake", () => {
+    const result = applyGatewayKeepAwakeWrapper({
+      platform: "darwin",
+      programArguments: ["node", "/opt/openclaw/dist/index.js", "gateway", "--port", "18789"],
+      keepAwake: {
+        enabled: true,
+        mode: "caffeinate",
+        onlyWhenPluggedIn: false,
+      },
+    });
+
+    expect(result).toEqual([
+      "/usr/bin/caffeinate",
+      "-dims",
+      "node",
+      "/opt/openclaw/dist/index.js",
+      "gateway",
+      "--port",
+      "18789",
+    ]);
+  });
+
+  it("uses AC-only caffeinate assertions when keepAwake is limited to plugged-in power", () => {
+    const result = applyGatewayKeepAwakeWrapper({
+      platform: "darwin",
+      programArguments: ["node", "openclaw", "gateway"],
+      keepAwake: {
+        enabled: true,
+        mode: "caffeinate",
+        onlyWhenPluggedIn: true,
+      },
+    });
+
+    expect(result).toEqual(["/usr/bin/caffeinate", "-s", "node", "openclaw", "gateway"]);
+  });
+
+  it("does not wrap non-macOS gateway commands with caffeinate", () => {
+    const programArguments = ["node", "openclaw", "gateway"];
+    const result = applyGatewayKeepAwakeWrapper({
+      platform: "linux",
+      programArguments,
+      keepAwake: {
+        enabled: true,
+        mode: "caffeinate",
+        onlyWhenPluggedIn: false,
+      },
+    });
+
+    expect(result).toBe(programArguments);
+  });
   it("uses realpath-resolved dist entry when running via npx shim", async () => {
     const argv1 = path.resolve("/tmp/.npm/_npx/63c3/node_modules/.bin/openclaw");
     const entryPath = path.resolve("/tmp/.npm/_npx/63c3/node_modules/openclaw/dist/entry.js");

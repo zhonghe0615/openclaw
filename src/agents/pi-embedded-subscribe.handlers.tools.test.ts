@@ -188,6 +188,46 @@ describe("handleToolExecutionEnd cron.add commitment tracking", () => {
     expect(ctx.state.itemCompletedCount).toBe(1);
     expect(ctx.state.itemActiveIds.size).toBe(0);
   });
+
+  it("increments successfulCronAdds when an MCP tool reports a reminder.create commitment", async () => {
+    const { ctx } = createTestContext();
+    await handleToolExecutionStart(
+      ctx as never,
+      {
+        type: "tool_execution_start",
+        toolName: "workspace_reminder__create_reminder",
+        toolCallId: "tool-mcp-reminder-1",
+        args: { title: "meeting", triggerAt: "2026-04-18T09:00:00+08:00" },
+      } as never,
+    );
+
+    await handleToolExecutionEnd(
+      ctx as never,
+      {
+        type: "tool_execution_end",
+        toolName: "workspace_reminder__create_reminder",
+        toolCallId: "tool-mcp-reminder-1",
+        isError: false,
+        result: {
+          details: {
+            mcpServer: "workspace-reminder",
+            mcpTool: "create_reminder",
+            structuredContent: {
+              ok: true,
+              committed: true,
+              capability: "reminder.create",
+              commitment: {
+                kind: "reminder.create",
+                status: "success",
+              },
+            },
+          },
+        },
+      } as never,
+    );
+
+    expect(ctx.state.successfulCronAdds).toBe(1);
+  });
 });
 
 describe("handleToolExecutionEnd mutating failure recovery", () => {

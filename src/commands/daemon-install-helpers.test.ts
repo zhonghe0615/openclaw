@@ -128,6 +128,35 @@ describe("buildGatewayInstallPlan", () => {
     );
   });
 
+  it("passes gateway.keepAwake config into gateway program argument resolution", async () => {
+    mockNodeGatewayPlanFixture();
+
+    await buildGatewayInstallPlan({
+      env: { HOME: isolatedHome },
+      port: 3000,
+      runtime: "node",
+      config: {
+        gateway: {
+          keepAwake: {
+            enabled: true,
+            mode: "caffeinate",
+            onlyWhenPluggedIn: false,
+          },
+        },
+      },
+    });
+
+    expect(mocks.resolveGatewayProgramArguments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        keepAwake: {
+          enabled: true,
+          mode: "caffeinate",
+          onlyWhenPluggedIn: false,
+        },
+      }),
+    );
+  });
+
   it("does not prepend '.' when nodePath is a bare executable name", async () => {
     mockNodeGatewayPlanFixture();
 

@@ -37,6 +37,10 @@ import {
   sanitizeToolResult,
 } from "./pi-embedded-subscribe.tools.js";
 import { inferToolMetaFromArgs } from "./pi-embedded-utils.js";
+import {
+  TOOL_COMMITMENT_CAPABILITIES,
+  toolResultHasCommitmentCapability,
+} from "./tool-commitment-capabilities.js";
 import { buildToolMutationState, isSameToolMutationAction } from "./tool-mutation.js";
 import { normalizeToolName } from "./tool-policy.js";
 
@@ -874,8 +878,16 @@ export async function handleToolExecutionEnd(
     }
   }
 
-  // Track committed reminders only when cron.add completed successfully.
-  if (!isToolError && toolName === "cron" && isCronAddAction(startData?.args)) {
+  // Track committed reminders from native cron.add and MCP tools that report
+  // the standard reminder.create commitment shape.
+  if (
+    !isToolError &&
+    ((toolName === "cron" && isCronAddAction(startData?.args)) ||
+      toolResultHasCommitmentCapability({
+        result,
+        capability: TOOL_COMMITMENT_CAPABILITIES.REMINDER_CREATE,
+      }))
+  ) {
     ctx.state.successfulCronAdds += 1;
   }
 

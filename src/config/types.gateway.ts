@@ -389,6 +389,21 @@ export type GatewayWebchatConfig = {
   chatHistoryMaxChars?: number;
 };
 
+export type GatewayKeepAwakeConfig = {
+  /** Keep the macOS Gateway LaunchAgent awake using a system wrapper. */
+  enabled?: boolean;
+  /**
+   * Keep-awake implementation. "caffeinate" wraps the LaunchAgent command with
+   * /usr/bin/caffeinate on macOS.
+   */
+  mode?: "caffeinate";
+  /**
+   * When true, only assert system sleep prevention while on AC power.
+   * When false, also prevents idle sleep on battery.
+   */
+  onlyWhenPluggedIn?: boolean;
+};
+
 export type GatewayConfig = {
   /** Single multiplexed port for Gateway WS + HTTP (default: 18789). */
   port?: number;
@@ -418,6 +433,7 @@ export type GatewayConfig = {
   http?: GatewayHttpConfig;
   push?: GatewayPushConfig;
   nodes?: GatewayNodesConfig;
+  keepAwake?: GatewayKeepAwakeConfig;
   /**
    * IPs of trusted reverse proxies (e.g. Traefik, nginx). When a connection
    * arrives from one of these IPs, the Gateway trusts `x-forwarded-for`

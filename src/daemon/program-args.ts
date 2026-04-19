@@ -14,6 +14,11 @@ type GatewayProgramArgs = {
 };
 
 type GatewayRuntimePreference = "auto" | "node" | "bun";
+type GatewayKeepAwakeConfig = {
+  enabled?: boolean;
+  mode?: "caffeinate";
+  onlyWhenPluggedIn?: boolean;
+};
 
 async function resolveCliEntrypointPathForService(): Promise<string> {
   const argv1 = process.argv[1];
@@ -250,19 +255,42 @@ async function resolveCliProgramArguments(params: {
   };
 }
 
+export function applyGatewayKeepAwakeWrapper(params: {
+  programArguments: string[];
+  keepAwake?: GatewayKeepAwakeConfig;
+  platform?: NodeJS.Platform;
+}): string[] {
+  const platform = params.platform ?? process.platform;
+  const keepAwake = params.keepAwake;
+  if (platform !== "darwin" || keepAwake?.enabled !== true || keepAwake.mode !== "caffeinate") {
+    return params.programArguments;
+  }
+
+  const caffeinateArgs = keepAwake.onlyWhenPluggedIn === true ? ["-s"] : ["-dims"];
+  return ["/usr/bin/caffeinate", ...caffeinateArgs, ...params.programArguments];
+}
+
 export async function resolveGatewayProgramArguments(params: {
   port: number;
   dev?: boolean;
   runtime?: GatewayRuntimePreference;
   nodePath?: string;
+  keepAwake?: GatewayKeepAwakeConfig;
 }): Promise<GatewayProgramArgs> {
   const gatewayArgs = ["gateway", "--port", String(params.port)];
-  return resolveCliProgramArguments({
+  const resolved = await resolveCliProgramArguments({
     args: gatewayArgs,
     dev: params.dev,
     runtime: params.runtime,
     nodePath: params.nodePath,
   });
+  return {
+    ...resolved,
+    programArguments: applyGatewayKeepAwakeWrapper({
+      programArguments: resolved.programArguments,
+      keepAwake: params.keepAwake,
+    }),
+  };
 }
 
 export async function resolveNodeProgramArguments(params: {
