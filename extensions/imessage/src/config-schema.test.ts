@@ -70,7 +70,6 @@ describe("imessage config schema", () => {
       expect(res.data.textChunkLimit).toBe(1111);
     }
   });
-
   it("accepts safe remoteHost", () => {
     const res = IMessageConfigSchema.safeParse({
       remoteHost: "bot@gateway-host",

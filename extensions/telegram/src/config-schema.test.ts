@@ -149,7 +149,6 @@ describe("telegram topic agentId schema", () => {
       "groups.-1001234567890.ingest",
     );
   });
-
   it("accepts nested groupPolicy overrides", () => {
     expectTelegramConfigValid({
       groups: {

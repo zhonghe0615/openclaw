@@ -64,7 +64,6 @@ describe("signal groups schema", () => {
       expect(res.data.textChunkLimit).toBe(2222);
     }
   });
-
   it("accepts accountUuid for loop protection", () => {
     expectValidSignalConfig({
       accountUuid: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",

@@ -62,7 +62,6 @@ describe("whatsapp config schema", () => {
       expect(res.data.textChunkLimit).toBe(4444);
     }
   });
-
   it("accepts enabled", () => {
     expectWhatsAppConfigValid({
       enabled: true,
