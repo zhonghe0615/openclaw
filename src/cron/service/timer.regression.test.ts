@@ -395,6 +395,56 @@ describe("cron service timer regressions", () => {
     expect(job!.state.nextRunAtMs).toBeUndefined();
   });
 
+  it("#24355: recurring cron job retries transient failures before the next natural schedule", async () => {
+    const store = timerRegressionFixtures.makeStorePath();
+    const scheduledAt = Date.parse("2026-02-15T13:00:00.000Z");
+
+    const cronJob = createIsolatedRegressionJob({
+      id: "recurring-transient-retry",
+      name: "daily noon",
+      scheduledAt,
+      schedule: { kind: "cron", expr: "0 13 * * *", tz: "UTC" },
+      payload: { kind: "agentTurn", message: "briefing" },
+      state: { nextRunAtMs: scheduledAt },
+    });
+    await writeCronJobs(store.storePath, [cronJob]);
+
+    let now = scheduledAt;
+    const runIsolatedAgentJob = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "error", error: "TypeError: fetch failed" })
+      .mockResolvedValueOnce({ status: "ok", summary: "done" });
+    const state = createCronServiceState({
+      cronEnabled: true,
+      storePath: store.storePath,
+      log: noopLogger,
+      nowMs: () => now,
+      enqueueSystemEvent: vi.fn(),
+      requestHeartbeatNow: vi.fn(),
+      runIsolatedAgentJob,
+      cronConfig: {
+        retry: { maxAttempts: 2, backoffMs: [1000, 2000], retryOn: ["network"] },
+      },
+    });
+
+    await onTimer(state);
+    const jobAfterRetry = state.store?.jobs.find((j) => j.id === "recurring-transient-retry");
+    expect(jobAfterRetry).toBeDefined();
+    expect(jobAfterRetry!.enabled).toBe(true);
+    expect(jobAfterRetry!.state.lastStatus).toBe("error");
+    expect(jobAfterRetry!.state.nextRunAtMs).toBe(scheduledAt + 1000);
+
+    now = (jobAfterRetry!.state.nextRunAtMs ?? now) + 1;
+    await onTimer(state);
+
+    const finishedJob = state.store?.jobs.find((j) => j.id === "recurring-transient-retry");
+    expect(finishedJob).toBeDefined();
+    expect(finishedJob!.enabled).toBe(true);
+    expect(finishedJob!.state.lastStatus).toBe("ok");
+    expect(finishedJob!.state.nextRunAtMs).toBeGreaterThan(scheduledAt + 86_000_000);
+    expect(runIsolatedAgentJob).toHaveBeenCalledTimes(2);
+  });
+
   it("prevents spin loop when cron job completes within the scheduled second (#17821)", async () => {
     const store = timerRegressionFixtures.makeStorePath();
     const scheduledAt = Date.parse("2026-02-15T13:00:00.000Z");
