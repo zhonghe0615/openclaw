@@ -79,6 +79,8 @@ let abortRuntimePromise: Promise<typeof import("./abort.runtime.js")> | null = n
 let ttsRuntimePromise: Promise<typeof import("../../tts/tts.runtime.js")> | null = null;
 let replyMediaPathsRuntimePromise: Promise<typeof import("./reply-media-paths.runtime.js")> | null =
   null;
+let intentRouterRuntimePromise: Promise<typeof import("../../intent-router/runtime.js")> | null =
+  null;
 
 function loadRouteReplyRuntime() {
   routeReplyRuntimePromise ??= import("./route-reply.runtime.js");
@@ -103,6 +105,11 @@ function loadTtsRuntime() {
 function loadReplyMediaPathsRuntime() {
   replyMediaPathsRuntimePromise ??= import("./reply-media-paths.runtime.js");
   return replyMediaPathsRuntimePromise;
+}
+
+function loadIntentRouterRuntime() {
+  intentRouterRuntimePromise ??= import("../../intent-router/runtime.js");
+  return intentRouterRuntimePromise;
 }
 
 async function maybeApplyTtsToReplyPayload(
@@ -699,6 +706,38 @@ export async function dispatchReplyFromConfig(
         recordProcessed("completed", { reason: "before_dispatch_handled" });
         markIdle("message_completed");
         return { queuedFinal, counts };
+      }
+    }
+
+    if (!params.replyOptions?.isHeartbeat) {
+      try {
+        const { tryRouteIntentToMcp } = await loadIntentRouterRuntime();
+        const routedIntent = await tryRouteIntentToMcp({
+          ctx,
+          cfg,
+          agentId: sessionAgentId,
+          workspaceDir: resolveAgentWorkspaceDir(cfg, sessionAgentId),
+        });
+        if (routedIntent.handled) {
+          let queuedFinal = false;
+          let routedFinalCount = 0;
+          if (!suppressDelivery) {
+            const handledReply = await sendFinalPayload(routedIntent.reply);
+            queuedFinal = handledReply.queuedFinal;
+            routedFinalCount += handledReply.routedFinalCount;
+          } else {
+            logVerbose(
+              `intent-router: reply suppressed by sendPolicy: deny (session=${sessionKey ?? "unknown"})`,
+            );
+          }
+          const counts = dispatcher.getQueuedCounts();
+          counts.final += routedFinalCount;
+          recordProcessed("completed", { reason: `intent-router:${routedIntent.reason}` });
+          markIdle("message_completed");
+          return { queuedFinal, counts };
+        }
+      } catch (error) {
+        logVerbose(`intent-router: failed, falling through to agent: ${formatErrorMessage(error)}`);
       }
     }
 

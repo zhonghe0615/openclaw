@@ -147,6 +147,17 @@ const replyMediaPathMocks = vi.hoisted(() => ({
     (_params?: unknown) => async (payload: ReplyPayload) => payload,
   ),
 }));
+type IntentRouterMockResult =
+  | { handled: false; reason: string }
+  | { handled: true; reason: string; reply: ReplyPayload };
+const intentRouterMocks = vi.hoisted(() => ({
+  tryRouteIntentToMcp: vi.fn(
+    async (_params: unknown): Promise<IntentRouterMockResult> => ({
+      handled: false,
+      reason: "test_pass",
+    }),
+  ),
+}));
 const threadInfoMocks = vi.hoisted(() => ({
   parseSessionThreadInfo: vi.fn<
     (sessionKey: string | undefined) => {
@@ -334,6 +345,10 @@ vi.mock("../../tts/tts.runtime.js", () => ({
 vi.mock("./reply-media-paths.runtime.js", () => ({
   createReplyMediaPathNormalizer: (params: unknown) =>
     replyMediaPathMocks.createReplyMediaPathNormalizer(params),
+}));
+vi.mock("../../intent-router/runtime.js", () => ({
+  tryRouteIntentToMcp: (params: unknown) => intentRouterMocks.tryRouteIntentToMcp(params),
+  resetIntentRouterDedupeForTests: vi.fn(),
 }));
 vi.mock("../../tts/status-config.js", () => ({
   resolveStatusTtsSnapshot: () => ({
@@ -655,6 +670,11 @@ describe("dispatchReplyFromConfig", () => {
     replyMediaPathMocks.createReplyMediaPathNormalizer.mockReturnValue(
       async (payload: ReplyPayload) => payload,
     );
+    intentRouterMocks.tryRouteIntentToMcp.mockReset();
+    intentRouterMocks.tryRouteIntentToMcp.mockResolvedValue({
+      handled: false,
+      reason: "test_pass",
+    });
   });
   it("does not route when Provider matches OriginatingChannel (even if Surface is missing)", async () => {
     setNoAbort();
@@ -677,6 +697,43 @@ describe("dispatchReplyFromConfig", () => {
 
     expect(mocks.routeReply).not.toHaveBeenCalled();
     expect(dispatcher.sendFinalReply).toHaveBeenCalledTimes(1);
+  });
+
+  it("short-circuits handled intent routes before the agent reply resolver", async () => {
+    setNoAbort();
+    intentRouterMocks.tryRouteIntentToMcp.mockResolvedValue({
+      handled: true,
+      reason: "matched_one_shot_reminder",
+      reply: { text: "已设置提醒：明天 09:00，开会" },
+    });
+    const cfg = {
+      agents: { defaults: { workspace: "/tmp/openclaw-test-workspace" } },
+      mcp: { servers: { "workspace-reminder": { command: "node", args: ["reminder-mcp.js"] } } },
+    } as OpenClawConfig;
+    const dispatcher = createDispatcher();
+    const replyResolver = vi.fn(async () => ({ text: "agent reply" }) satisfies ReplyPayload);
+    const ctx = buildTestCtx({
+      Provider: "openclaw-weixin",
+      Surface: "openclaw-weixin",
+      Body: "明天9点提醒我开会",
+      CommandBody: "明天9点提醒我开会",
+      BodyForCommands: "明天9点提醒我开会",
+      SessionKey: "agent:codex:openclaw-weixin:user-1",
+    });
+
+    const result = await dispatchReplyFromConfig({ ctx, cfg, dispatcher, replyResolver });
+
+    expect(replyResolver).not.toHaveBeenCalled();
+    expect(intentRouterMocks.tryRouteIntentToMcp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "codex",
+        workspaceDir: "/tmp/openclaw-test-workspace/codex",
+      }),
+    );
+    expect(dispatcher.sendFinalReply).toHaveBeenCalledWith({
+      text: "已设置提醒：明天 09:00，开会",
+    });
+    expect(result.queuedFinal).toBe(true);
   });
 
   it("routes when OriginatingChannel differs from Provider", async () => {
