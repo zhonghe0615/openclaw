@@ -159,6 +159,19 @@ describe("config schema regressions", () => {
     expect(res.ok).toBe(true);
   });
 
+  it("accepts agents.defaults.compaction.truncateAfterCompaction", () => {
+    const res = validateConfigObject({
+      agents: {
+        defaults: {
+          compaction: {
+            truncateAfterCompaction: true,
+          },
+        },
+      },
+    });
+
+    expect(res.ok).toBe(true);
+  });
   it("accepts string values for agents defaults model inputs", () => {
     const res = validateConfigObject({
       agents: {
