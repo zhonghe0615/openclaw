@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { resolveUserTimezone } from "../agents/date-time.js";
 import type { FinalizedMsgContext } from "../auto-reply/templating.js";
+import { resolveStateDir } from "../config/paths.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
 import type { IntentRouteDecision } from "./reminder.js";
@@ -84,9 +85,10 @@ export async function tryLlmReminderFallback(params: {
       sessionId,
       sessionFile,
       workspaceDir: params.workspaceDir,
+      agentDir: path.join(resolveStateDir(), "agents", params.agentId, "agent"),
       config: params.cfg,
-      provider: "codex",
-      model: "gpt-5.4-mini",
+      provider: "openai-codex",
+      model: "gpt-5.1-codex-mini",
       disableTools: true,
       bootstrapContextMode: "lightweight",
       prompt: buildClassifyPrompt(text, nowLabel),
