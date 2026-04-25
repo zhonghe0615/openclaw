@@ -6,6 +6,12 @@ import { logVerbose } from "../globals.js";
 import { callConfiguredMcpTool } from "./mcp.js";
 import { routeReminderIntent } from "./reminder.js";
 
+let reminderLlmPromise: Promise<typeof import("./reminder.llm.js")> | null = null;
+function loadReminderLlm() {
+  reminderLlmPromise ??= import("./reminder.llm.js");
+  return reminderLlmPromise;
+}
+
 const DEDUPE_TTL_MS = 30_000;
 const recentCommittedRoutes = new Map<string, number>();
 
@@ -17,7 +23,7 @@ export async function tryRouteIntentToMcp(params: {
 }): Promise<
   { handled: false; reason: string } | { handled: true; reply: ReplyPayload; reason: string }
 > {
-  const decision = routeReminderIntent({
+  let decision = routeReminderIntent({
     ctx: params.ctx,
     cfg: params.cfg,
     agentId: params.agentId,
@@ -25,6 +31,21 @@ export async function tryRouteIntentToMcp(params: {
   logVerbose(
     `intent-router: decision action=${decision.action} confidence=${decision.confidence} reason=${decision.reason}`,
   );
+
+  if (decision.action === "pass" && decision.reason === "not_reminder_intent") {
+    try {
+      const { tryLlmReminderFallback } = await loadReminderLlm();
+      const llmDecision = await tryLlmReminderFallback(params);
+      if (llmDecision) {
+        logVerbose(
+          `intent-router: llm fallback matched action=${llmDecision.action} reason=${llmDecision.reason}`,
+        );
+        decision = llmDecision;
+      }
+    } catch (err) {
+      logVerbose(`intent-router: llm fallback failed: ${String(err)}`);
+    }
+  }
 
   if (decision.action === "pass") {
     return { handled: false, reason: decision.reason };
