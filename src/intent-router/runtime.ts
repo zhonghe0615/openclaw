@@ -32,7 +32,10 @@ export async function tryRouteIntentToMcp(params: {
     `intent-router: decision action=${decision.action} confidence=${decision.confidence} reason=${decision.reason}`,
   );
 
-  if (decision.action === "pass" && decision.reason === "not_reminder_intent") {
+  if (
+    (decision.action === "pass" && decision.reason === "not_reminder_intent") ||
+    decision.action === "clarify"
+  ) {
     try {
       const { tryLlmReminderFallback } = await loadReminderLlm();
       const llmDecision = await tryLlmReminderFallback(params);
