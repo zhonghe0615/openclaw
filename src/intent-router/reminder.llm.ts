@@ -5,6 +5,7 @@ import { resolveUserTimezone } from "../agents/date-time.js";
 import type { FinalizedMsgContext } from "../auto-reply/templating.js";
 import { resolveStateDir } from "../config/paths.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { logVerbose } from "../globals.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
 import type { IntentRouteDecision } from "./reminder.js";
 
@@ -16,12 +17,16 @@ const DEFAULT_TIMEZONE = "Asia/Shanghai";
 const REMINDER_ADJACENT_RE =
   /(提醒|叫我|通知我|记得|别忘|到点|睡前|起床|吃完|开会|下班|[零一二三四五六七八九十两\d]+\s*[点分钟小时天]|明天|今晚|今早|早上|下午|晚上)/;
 
+const QUERY_ADJACENT_RE =
+  /(查询?|查提醒|查任务|查待办|未来|近期|最近|接下来|有什么.{0,5}(提醒|任务|待办))/;
+
 export function mightBeReminderIntent(text: string): boolean {
   return text.length < 200 && REMINDER_ADJACENT_RE.test(text);
 }
 
 type LlmReminderJson =
-  | { isReminder: false }
+  | { isReminder: false; isQuery?: false }
+  | { isReminder: false; isQuery: true; filter: "today" | "upcoming" | "all" }
   | {
       isReminder: true;
       title: string;
@@ -37,7 +42,9 @@ function buildClassifyPrompt(text: string, nowLabel: string): string {
     "Return ONLY valid JSON, no markdown, no commentary.",
     "",
     "Schemas:",
-    '  Not a reminder:               {"isReminder":false}',
+    '  Not a reminder/query:          {"isReminder":false}',
+    '  Query reminders ("查任务"):     {"isReminder":false,"isQuery":true,"filter":"<today|upcoming|all>"}',
+    "    filter: today=今天/今日, upcoming=未来/近期/最近/接下来/N天, all=所有/全部",
     '  One-time relative ("10分钟后"): {"isReminder":true,"title":"<task>","triggerAt":"<Nm|Nh|Nd>"}',
     '  One-time absolute ("明天9点"):  {"isReminder":true,"title":"<task>","dateTime":"<YYYY-MM-DDTHH:MM:00>"}',
     '  Recurring cron:               {"isReminder":true,"title":"<task>","cronExpr":"<expr>"}',
@@ -60,7 +67,12 @@ export async function tryLlmReminderFallback(params: {
     normalizeOptionalString(params.ctx.RawBody) ??
     normalizeOptionalString(params.ctx.Body) ??
     "";
-  if (!text || !mightBeReminderIntent(text)) {
+  if (!text) {
+    logVerbose("intent-router: llm fallback skipped: empty_text");
+    return null;
+  }
+  if (!mightBeReminderIntent(text) && !QUERY_ADJACENT_RE.test(text)) {
+    logVerbose("intent-router: llm fallback skipped: gate_not_matched");
     return null;
   }
 
@@ -88,7 +100,7 @@ export async function tryLlmReminderFallback(params: {
       agentDir: path.join(resolveStateDir(), "agents", params.agentId, "agent"),
       config: params.cfg,
       provider: "openai-codex",
-      model: "gpt-5.1-codex-mini",
+      model: "gpt-5.4-mini",
       disableTools: true,
       bootstrapContextMode: "lightweight",
       prompt: buildClassifyPrompt(text, nowLabel),
@@ -113,20 +125,57 @@ export async function tryLlmReminderFallback(params: {
     try {
       parsed = JSON.parse(raw) as LlmReminderJson;
     } catch {
+      logVerbose(
+        `intent-router: llm fallback invalid_json raw=${JSON.stringify(raw).slice(0, 300)}`,
+      );
       return null;
     }
 
+    if ("isQuery" in parsed && parsed.isQuery) {
+      return buildQueryDecision(parsed, params);
+    }
     if (!parsed.isReminder) {
+      logVerbose("intent-router: llm fallback classified_not_reminder");
       return null;
     }
-    return buildDecision(parsed, params);
-  } catch {
+    const decision = buildDecision(parsed, params);
+    if (!decision) {
+      logVerbose(
+        `intent-router: llm fallback missing_time_fields parsed=${JSON.stringify(parsed).slice(0, 300)}`,
+      );
+    }
+    return decision;
+  } catch (error) {
+    logVerbose(`intent-router: llm fallback exception: ${String(error)}`);
     return null;
   } finally {
     if (tmpDir) {
       await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     }
   }
+}
+
+function buildQueryDecision(
+  parsed: Extract<LlmReminderJson, { isQuery: true }>,
+  params: { ctx: FinalizedMsgContext; agentId: string },
+): IntentRouteDecision {
+  const { ctx } = params;
+  const filter = parsed.filter ?? "upcoming";
+  const dedupeBase = [
+    normalizeOptionalString(ctx.SessionKey) ?? "",
+    normalizeOptionalString(ctx.MessageSidFull) ?? normalizeOptionalString(ctx.MessageSid) ?? "",
+  ].join("|");
+  return {
+    action: "call_tool",
+    confidence: 0.85,
+    routeId: "reminder.list",
+    server: REMINDER_SERVER,
+    tool: "list_reminders",
+    arguments: { filter },
+    confirmationText: "查询中…",
+    dedupeKey: `reminder.list|${dedupeBase}|${filter}`,
+    reason: "matched_list_reminders_llm",
+  };
 }
 
 function buildDecision(
