@@ -32,9 +32,9 @@ export type IntentRouteDecision =
   | {
       action: "call_tool";
       confidence: number;
-      routeId: "reminder.once" | "reminder.recurring";
+      routeId: "reminder.once" | "reminder.recurring" | "reminder.list";
       server: typeof REMINDER_SERVER;
-      tool: "create_reminder" | "create_recurring_reminder";
+      tool: "create_reminder" | "create_recurring_reminder" | "list_reminders";
       arguments: Record<string, unknown>;
       confirmationText: string;
       dedupeKey: string;
@@ -146,6 +146,47 @@ export function routeReminderIntent(params: {
     confirmationText: `已设置提醒：${parsedTime.label}，${title || "提醒你"}`,
     dedupeKey: buildDedupeKey(params.ctx, "reminder.once", parsedTime.label, title),
     reason: "matched_one_shot_reminder",
+  };
+}
+
+const QUERY_RE =
+  /(查提醒|查任务|查待办|今[天日](有|的)?(什么|啥)?(任务|提醒|待办)|看[一下看]?今[天日]?(有什么|有啥)?(任务|提醒|待办)|(有什么|有啥|有哪些)(提醒|任务|待办))/;
+const TODAY_QUALIFIER_RE = /今[天日]/;
+const ALL_QUALIFIER_RE = /(所有|全部)/;
+
+export function routeListRemindersIntent(params: {
+  ctx: FinalizedMsgContext;
+  cfg: OpenClawConfig;
+  agentId: string;
+}): IntentRouteDecision | null {
+  if (!params.cfg.mcp?.servers?.[REMINDER_SERVER]) {
+    return null;
+  }
+  const text = getMessageText(params.ctx);
+  if (!text || !QUERY_RE.test(text)) {
+    return null;
+  }
+  const filter = ALL_QUALIFIER_RE.test(text)
+    ? "all"
+    : TODAY_QUALIFIER_RE.test(text)
+      ? "today"
+      : "upcoming";
+  const dedupeBase = [
+    normalizeOptionalString(params.ctx.SessionKey) ?? "",
+    normalizeOptionalString(params.ctx.MessageSidFull) ??
+      normalizeOptionalString(params.ctx.MessageSid) ??
+      "",
+  ].join("|");
+  return {
+    action: "call_tool",
+    confidence: 0.88,
+    routeId: "reminder.list",
+    server: REMINDER_SERVER,
+    tool: "list_reminders",
+    arguments: { filter },
+    confirmationText: "查询中…",
+    dedupeKey: `reminder.list|${dedupeBase}|${filter}`,
+    reason: "matched_list_reminders_intent",
   };
 }
 
