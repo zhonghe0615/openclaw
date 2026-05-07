@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { routeReminderIntent } from "./reminder.js";
+import {
+  routeDeleteReminderIntent,
+  routeListRemindersIntent,
+  routeReminderIntent,
+} from "./reminder.js";
 
 const cfg = {
   agents: { defaults: { userTimezone: "Asia/Shanghai" } },
@@ -19,6 +23,24 @@ function route(text: string, nowMs = Date.parse("2026-04-21T03:00:00.000Z")) {
     cfg,
     agentId: "codex",
     nowMs,
+    ctx: {
+      CommandAuthorized: true,
+      Body: text,
+      CommandBody: text,
+      BodyForCommands: text,
+      Provider: "openclaw-weixin",
+      Surface: "openclaw-weixin",
+      From: "user-1",
+      AccountId: "acct-1",
+      SessionKey: "agent:codex:openclaw-weixin:user-1",
+    },
+  });
+}
+
+function routeList(text: string) {
+  return routeListRemindersIntent({
+    cfg,
+    agentId: "codex",
     ctx: {
       CommandAuthorized: true,
       Body: text,
@@ -113,6 +135,130 @@ describe("routeReminderIntent", () => {
   it("passes non-reminder messages", () => {
     expect(route("今天下午天气怎么样")).toMatchObject({
       action: "pass",
+    });
+  });
+});
+
+describe("routeListRemindersIntent", () => {
+  it.each([
+    ["查一下现在的任务", "upcoming"],
+    ["列一下现在的任务", "upcoming"],
+    ["列出当前提醒", "upcoming"],
+    ["看看现有任务", "upcoming"],
+    ["现在有哪些任务", "upcoming"],
+    ["当前提醒", "upcoming"],
+    ["列一下所有任务", "all"],
+    ["查看今天的提醒", "today"],
+  ] as [string, "today" | "upcoming" | "all"][])("%s", (text, filter) => {
+    const decision = routeList(text);
+    expect(decision).toMatchObject({
+      action: "call_tool",
+      routeId: "reminder.list",
+      tool: "list_reminders",
+      arguments: { filter },
+    });
+  });
+
+  it("passes unrelated text", () => {
+    expect(routeList("今天下午天气怎么样")).toBeNull();
+  });
+});
+
+describe("routeDeleteReminderIntent", () => {
+  it("routes explicit delete-by-name requests", () => {
+    const decision = routeDeleteReminderIntent({
+      cfg,
+      ctx: {
+        CommandAuthorized: true,
+        Body: "删除买咖啡回魂这个任务",
+        CommandBody: "删除买咖啡回魂这个任务",
+        BodyForCommands: "删除买咖啡回魂这个任务",
+      },
+    } as Parameters<typeof routeDeleteReminderIntent>[0]);
+    expect(decision).toMatchObject({
+      action: "delete_reminder",
+      targetHint: "买咖啡回魂",
+    });
+  });
+
+  it("normalizes quoted delete targets", () => {
+    const decision = routeDeleteReminderIntent({
+      cfg,
+      ctx: {
+        CommandAuthorized: true,
+        Body: "删除 “测试任务”",
+        CommandBody: "删除 “测试任务”",
+        BodyForCommands: "删除 “测试任务”",
+      },
+    } as Parameters<typeof routeDeleteReminderIntent>[0]);
+    expect(decision).toMatchObject({
+      action: "delete_reminder",
+      targetHint: "测试任务",
+    });
+  });
+
+  it("routes quoted delete requests without reminder nouns", () => {
+    const decision = routeDeleteReminderIntent({
+      cfg,
+      ctx: {
+        CommandAuthorized: true,
+        Body: "取消“去上厕所”",
+        CommandBody: "取消“去上厕所”",
+        BodyForCommands: "取消“去上厕所”",
+      },
+    } as Parameters<typeof routeDeleteReminderIntent>[0]);
+    expect(decision).toMatchObject({
+      action: "delete_reminder",
+      targetHint: "去上厕所",
+    });
+  });
+
+  it("drops relative-time phrasing from delete targets", () => {
+    const decision = routeDeleteReminderIntent({
+      cfg,
+      ctx: {
+        CommandAuthorized: true,
+        Body: "取消10分钟后的这个测试任务",
+        CommandBody: "取消10分钟后的这个测试任务",
+        BodyForCommands: "取消10分钟后的这个测试任务",
+      },
+    } as Parameters<typeof routeDeleteReminderIntent>[0]);
+    expect(decision).toMatchObject({
+      action: "delete_reminder",
+      targetHint: "测试",
+    });
+  });
+
+  it("routes reply-based delete requests", () => {
+    const decision = routeDeleteReminderIntent({
+      cfg,
+      ctx: {
+        CommandAuthorized: true,
+        Body: "这个任务删掉吧",
+        CommandBody: "这个任务删掉吧",
+        BodyForCommands: "这个任务删掉吧",
+        ReplyToBody: "看一下 雨小了就提醒",
+      },
+    } as Parameters<typeof routeDeleteReminderIntent>[0]);
+    expect(decision).toMatchObject({
+      action: "delete_reminder",
+      referencedText: "看一下 雨小了就提醒",
+    });
+  });
+
+  it("asks for clarification when delete target is missing", () => {
+    const decision = routeDeleteReminderIntent({
+      cfg,
+      ctx: {
+        CommandAuthorized: true,
+        Body: "删除这个提醒",
+        CommandBody: "删除这个提醒",
+        BodyForCommands: "删除这个提醒",
+      },
+    } as Parameters<typeof routeDeleteReminderIntent>[0]);
+    expect(decision).toMatchObject({
+      action: "clarify",
+      missing: ["reminder_target"],
     });
   });
 });

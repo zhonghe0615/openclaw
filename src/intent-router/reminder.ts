@@ -7,6 +7,10 @@ const REMINDER_SERVER = "workspace-reminder";
 const DEFAULT_TIMEZONE = "Asia/Shanghai";
 const REMINDER_VERB_RE =
   /(提醒我|提醒一下|叫我|叫一下我|通知我|设个提醒|定个提醒|到点提醒我|帮我提醒)/;
+const DELETE_REMINDER_RE = /(删掉|删除|取消|移除|去掉|关掉|关闭|停掉)/;
+const DELETE_REMINDER_NOUN_RE = /(任务|提醒|定时任务|日程|闹钟)/;
+const DELETE_REMINDER_NOUN_GLOBAL_RE = /(任务|提醒|定时任务|日程|闹钟)/g;
+const DELETE_REMINDER_PRONOUN_RE = /^(这个|这条|这个任务|这条任务|这个提醒|这条提醒)$/;
 const RECURRING_RE =
   /(每天|每日|工作日|每周|每星期|每隔\s*[零一二三四五六七八九十两\d]+\s*(分钟|小时|天))/;
 const WEEKDAY_MAP: Record<string, number> = {
@@ -36,6 +40,16 @@ export type IntentRouteDecision =
       server: typeof REMINDER_SERVER;
       tool: "create_reminder" | "create_recurring_reminder" | "list_reminders";
       arguments: Record<string, unknown>;
+      confirmationText: string;
+      dedupeKey: string;
+      reason: string;
+    }
+  | {
+      action: "delete_reminder";
+      confidence: number;
+      routeId: "reminder.delete";
+      targetHint?: string;
+      referencedText?: string;
       confirmationText: string;
       dedupeKey: string;
       reason: string;
@@ -149,8 +163,43 @@ export function routeReminderIntent(params: {
   };
 }
 
+export function routeDeleteReminderIntent(params: {
+  ctx: FinalizedMsgContext;
+  cfg: OpenClawConfig;
+}): IntentRouteDecision | null {
+  const text = getMessageText(params.ctx);
+  if (!text || !DELETE_REMINDER_RE.test(text)) {
+    return null;
+  }
+  const targetHint = extractDeleteReminderTargetHint(text);
+  const referencedText = normalizeOptionalString(params.ctx.ReplyToBody);
+  if (!targetHint && !referencedText && !DELETE_REMINDER_NOUN_RE.test(text)) {
+    return null;
+  }
+  if (!targetHint && !referencedText) {
+    return {
+      action: "clarify",
+      confidence: 0.78,
+      question: "你想删掉哪个提醒或任务？",
+      missing: ["reminder_target"],
+      reason: "delete_reminder_target_missing",
+    };
+  }
+  const dedupeLabel = targetHint || referencedText || "current";
+  return {
+    action: "delete_reminder",
+    confidence: targetHint ? 0.92 : 0.86,
+    routeId: "reminder.delete",
+    targetHint: targetHint || undefined,
+    referencedText: referencedText || undefined,
+    confirmationText: "删除中…",
+    dedupeKey: buildDedupeKey(params.ctx, "reminder.delete", dedupeLabel, ""),
+    reason: targetHint ? "matched_delete_reminder_intent" : "matched_delete_reminder_reply_intent",
+  };
+}
+
 const QUERY_RE =
-  /(查提醒|查任务|查待办|今[天日](有|的)?(什么|啥)?(任务|提醒|待办)|看[一下看]?今[天日]?(有什么|有啥)?(任务|提醒|待办)|(有什么|有啥|有哪些)(提醒|任务|待办))/;
+  /(((查|看|列)(一下|下|一看)?|查看|看看|列出)(当前|现在|现有)?(已创建的)?(全部|所有)?(的)?(提醒|任务|待办|定时任务)|(当前|现在|现有)(有哪些|有什么)?(已创建的)?(全部|所有)?(提醒|任务|待办|定时任务)|今[天日](有|的)?(什么|啥)?(任务|提醒|待办)|看[一下看]?今[天日]?(有什么|有啥)?(任务|提醒|待办)|(有什么|有啥|有哪些)(提醒|任务|待办))/;
 const TODAY_QUALIFIER_RE = /今[天日]/;
 const ALL_QUALIFIER_RE = /(所有|全部)/;
 
@@ -252,6 +301,28 @@ function extractReminderTitle(text: string): string {
     .replace(/\s+/g, " ")
     .trim();
   return next || "提醒";
+}
+
+function extractDeleteReminderTargetHint(text: string): string {
+  const quotedMatch = text.match(/[“"「『]([^“”"「」『』]+)[”"」』]/);
+  if (quotedMatch?.[1]) {
+    return quotedMatch[1].trim();
+  }
+  let next = text.replace(DELETE_REMINDER_RE, " ");
+  next = next
+    .replace(/[“”‘’「」『』（）()【】[\]]/g, " ")
+    .replace(DELETE_REMINDER_NOUN_GLOBAL_RE, " ")
+    .replace(/[零一二三四五六七八九十两\d]+\s*(分钟|小时|天|周|星期)(后|内)?(的)?/g, " ")
+    .replace(/(明天|今天|今晚|今早|早上|上午|中午|下午|晚上|稍后|待会|一会儿)(的)?/g, " ")
+    .replace(/(吧|一下|帮我|麻烦|请|先|给我|把)/g, " ")
+    .replace(/(这个|这条)/g, " ")
+    .replace(/[，,。.!！?？:："'`~·]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!next || DELETE_REMINDER_PRONOUN_RE.test(next)) {
+    return "";
+  }
+  return next;
 }
 
 function parseOneShotTime(

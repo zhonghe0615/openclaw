@@ -91,6 +91,25 @@ describe("tryLlmReminderFallback", () => {
     expect(mockRunEmbeddedPiAgent).not.toHaveBeenCalled();
   });
 
+  it("treats task-list phrasing as a reminder query signal", async () => {
+    const ctx = {
+      ...baseCtx,
+      BodyForCommands: "列一下现在的任务",
+      CommandBody: "列一下现在的任务",
+      Body: "列一下现在的任务",
+    };
+    mockLlm({ isReminder: false, isQuery: true, filter: "upcoming" });
+    const result = await tryLlmReminderFallback({ ...baseParams, ctx });
+    expect(mockRunEmbeddedPiAgent).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      action: "call_tool",
+      routeId: "reminder.list",
+      tool: "list_reminders",
+      arguments: { filter: "upcoming" },
+      reason: "matched_list_reminders_llm",
+    });
+  });
+
   it("returns null when LLM says isReminder: false", async () => {
     mockLlm({ isReminder: false });
     expect(await tryLlmReminderFallback(baseParams)).toBeNull();
